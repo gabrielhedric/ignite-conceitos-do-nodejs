@@ -1,41 +1,139 @@
+const { request, response } = require('express');
 const express = require('express');
-const cors = require('cors');
-
-// const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid")
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
 
-// const users = [];
+const customers = [];
 
-function checksExistsUserAccount(request, response, next) {
-  // Complete aqui
+function verifyIfExistsAccountCPF(request, response, next) {
+    const { cpf } = request.headers;
+
+    const customer = customers.find((customer) => customer.cpf === cpf); 
+
+    if (!customer) {
+        return response.status(400).json({ error: "Customer not found "});
+    }
+
+    request.customer = customer;
+
+    return next();
 }
 
-app.post('/users', (request, response) => {
-  // Complete aqui
+function getBalance(statement) {
+    const balance = statement.reduce((acc, operation) => {
+        if(operation.type === 'credit') {
+            return acc + operation.amount;
+        } else {
+            return acc - operation.amount;
+        }
+    }, 0);
+    
+    return balance;
+
+}
+
+app.post("/account", (request, response ) => {
+    const { cpf, name } = request.body; 
+
+    const customerAlreadyExists = customers.some((customer) => customer.cpf === cpf);
+
+    if(customerAlreadyExists) {
+        return response.status(400).json({
+            error: 'Customer already exists'
+        });
+    }
+
+    customers.push({
+        cpf,
+        name,
+        id: uuidv4(),
+        statement: []
+    })
+
+    console.log(customers)
+
+    return response.status(201).send();
 });
 
-app.get('/todos', checksExistsUserAccount, (request, response) => {
-  // Complete aqui
+app.get("/account", verifyIfExistsAccountCPF, (request, response) => {
+    const { customer } = request;
+    
+    return response.json(customer)
 });
 
-app.post('/todos', checksExistsUserAccount, (request, response) => {
-  // Complete aqui
+app.get("/statement", verifyIfExistsAccountCPF, (request, response) => {
+    const { customer } = request;
+
+    return response.json(customer.statement);
 });
 
-app.put('/todos/:id', checksExistsUserAccount, (request, response) => {
-  // Complete aqui
+app.post("/deposit", verifyIfExistsAccountCPF, (request, response) => {
+    const { description, amount } = request.body;
+
+    const { customer } = request;
+
+    const statementOperation = {
+        description, 
+        amount,
+        created_at: new Date(),
+        type: "credit"
+    }
+
+    customer.statement.push(statementOperation); 
+
+    return response.status(201).send();
+
 });
 
-app.patch('/todos/:id/done', checksExistsUserAccount, (request, response) => {
-  // Complete aqui
+app.post("/withdraw", verifyIfExistsAccountCPF, (request, response) => {
+    const { amount } = request.body;
+    const { customer } = request;
+
+    const balance = getBalance(customer.statement);
+
+    if(balance < amount) {
+        return response.status(400).json({
+            error: 'Insufficient funds!'
+        });
+    };
+
+    const statementOperation = { 
+        amount,
+        created_at: new Date(),
+        type: "debit"
+    };
+
+    customer.statement.push(statementOperation);
+
+    return response.status(201).send();
 });
 
-app.delete('/todos/:id', checksExistsUserAccount, (request, response) => {
-  // Complete aqui
+
+app.get("/statement/date", verifyIfExistsAccountCPF, (request, response) => {
+    const { customer } = request;
+    const { date } = request.query;
+
+    const dateFormat = new Date( date + " 00:00");
+
+    const statement = customer.statement.filter((statement) => statement.created_at.toDateString()
+    === new Date(dateFormat).toDateString());
+
+    return response.json(statement);
 });
 
-module.exports = app;
+app.put("/account", verifyIfExistsAccountCPF, (request, response) => {
+    const { name } = request.body; 
+
+    const { customer } = request;
+
+    customer.name = name;
+
+    return response.status(201).send();
+});
+
+app.listen(3333, () => {
+    console.log('Backend started on port 3333!')
+});
